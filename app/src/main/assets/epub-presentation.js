@@ -1,0 +1,12 @@
+window.ReaderEpubPresentation = (function(){
+  'use strict';
+  const colors=new Set('black white red darkred maroon crimson blue navy green darkgreen purple brown orange gray grey teal yellow transparent inherit'.split(' '));
+  function color(s){s=String(s||'').trim().toLowerCase();return /^(?:#[a-f0-9]{3,4}|#[a-f0-9]{6}|#[a-f0-9]{8})$/.test(s)||colors.has(s)||/^(?:rgb|rgba|hsl|hsla)\([0-9.,%+\-\s]+\)$/.test(s)?s:'';}
+  function rules(css){const out=[];String(css||'').replace(/\/\*[\s\S]*?\*\//g,'').replace(/([^{}]+)\{([^{}]*)\}/g,(_,selectors,body)=>{const matches=Array.from(body.matchAll(/(?:^|;)\s*color\s*:\s*([^;!}]+)/ig)),value=color(matches.length?matches[matches.length-1][1]:'');if(!value)return '';selectors.split(',').forEach(selector=>{selector=selector.trim();if(/^(?:[a-z][\w-]*|\*)?(?:[.#][\w\u3400-\u9fff-]+)*$/i.test(selector)&&selector)out.push({selector,value,score:(selector.match(/#/g)||[]).length*100+(selector.match(/\./g)||[]).length*10+Number(/^[a-z]/i.test(selector))});});return '';});return out;}
+  function style(node,target,list){let selected='',score=-1;list.forEach(rule=>{if(node.matches(rule.selector)&&rule.score>=score){selected=rule.value;score=rule.score;}});selected=color(node.style.color)||color(node.getAttribute('color'))||selected;const neutral=/^(?:black|white|#000(?:000)?|#fff(?:fff)?|transparent|inherit)$/.test(selected);if(selected&&!neutral)target.style.color=selected;
+    const type=node.getAttribute('epub:type')||node.getAttributeNS('http://www.idpf.org/2007/ops','type')||'',role=node.getAttribute('role')||'',classes=String(node.className||'').split(/\s+/);
+    if(role==='doc-footnote'||/^(footnote|endnote)$/.test(type)||(node.tagName!=='A'&&classes.some(c=>/(?:footnote|endnote).*(?:content|item)|(?:footnote|endnote)$/i.test(c))))target.classList.add('reader-footnote');
+  }
+  function inlineImage(node,dimensions){const context=node.closest('p,li,dd,dt')!==null,note=node.closest('[epub\\:type="noteref"],[role="doc-noteref"],a[class*="footnote"]'),em=String(node.getAttribute('style')||'').match(/(?:^|;)\s*(?:width|height)\s*:\s*([0-9.]+)em/i),smallClass=String(node.className||'').split(/\s+/).some(c=>/^w(?:0[579]|1[01]?)$/.test(c)),w=Number(node.getAttribute('width'))||dimensions&&dimensions.width,h=Number(node.getAttribute('height'))||dimensions&&dimensions.height;return Boolean(note||context&&(smallClass||em&&Number(em[1])<=2||w>0&&w<=64&&h>0&&h<=64));}
+  return {rules,style,inlineImage};
+})();

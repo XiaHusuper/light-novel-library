@@ -1,0 +1,16 @@
+轻小说文库 / LIGHT NOVEL LIBRARY
+
+Original application interface, local library and recommendation implementation: this project contributors.
+The MIT license in LICENSE applies to this project's original code only.
+
+Native protocol runtime provenance:
+MewX/light-novel-library_Wenku8_Android and its contributors
+https://github.com/MewX/light-novel-library_Wenku8_Android
+
+Immediate distribution source of the unmodified JNI binaries:
+mikufoxxx/Wenku8_Flutter, release v0.4.8
+https://github.com/mikufoxxx/Wenku8_Flutter/releases/tag/v0.4.8
+
+Original upstream GPL-2.0-or-later text and the v0.4.8 LICENSE, NOTICE and GPL-3.0 text are retained in licenses/.
+See THIRD_PARTY.md for actual reuse, binary provenance and license boundaries.
+Attribution does not imply affiliation or endorsement.

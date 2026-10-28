@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const context={window:{}};vm.createContext(context);for(const name of ['taxonomy.js','library.js','profile.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../app/src/main/assets',name),'utf8'),context);
+const P=context.window.ReaderProfile,learning={books:{}},now=Date.UTC(2026,9,28,2),book={id:'1',title:'Original A',tags:'校园 恋爱 魔法'};
+for(let i=0;i<15;i++)P.view(learning,'1',false,now);let result=P.calculate([book],{likes:[],avoid:[],feedback:{}},[],learning,now);assert.equal(result.records[0].weights.browse,.1);
+P.view(learning,'1',true,now);result=P.calculate([book],{likes:[],avoid:[],feedback:{}},[],learning,now);assert.equal(result.records[0].weights.browse,.2);
+for(let i=0;i<30;i++)P.read(learning,'1',20,now);result=P.calculate([book],{likes:[],avoid:[],feedback:{}},[],learning,now);assert.equal(result.totalSeconds,600);assert.equal(result.records[0].weights.read,1);assert.equal(result.records[0].weights.sustained,1);
+assert.equal(result.vector['校园'],result.vector['恋爱']);assert.equal(result.vector['魔法'],2*result.vector['校园']);
+result=P.calculate([book],{likes:[],avoid:[],feedback:{'1':'like'}},[{...book,favorite:true}],learning,now);assert.equal(result.records[0].score,10);
+const old=P.calculate([book],{likes:[],avoid:[],feedback:{}},[],learning,now+14*86400000);assert.ok(Math.abs(old.records[0].weights.browse-.1)<1e-7);assert.equal(old.records[0].weights.sustained,0);
+const cleared=P.calculate([book],{likes:['校园'],avoid:[],feedback:{}},[{...book,favorite:true}],{books:{}},now);assert.equal(cleared.totalSeconds,0);assert.equal(cleared.records[0].weights.browse,0);assert.equal(cleared.records[0].weights.favorite,4);assert.ok(cleared.tags.length);
+const hidden=P.calculate([book],{likes:[],avoid:[],feedback:{'1':'hide'}},[],learning,now);assert.equal(hidden.records[0].score,0);
+for(let i=0;i<180;i++)P.view(learning,String(i+2),false,now+i);assert.ok(Object.keys(learning.books).length<=150);
+console.log(JSON.stringify({passed:true,dailyBrowseUpgrade:true,qualifiedReading:true,equalCategoryBudget:true,scoreCap:true,halfLifeDecay:true,clearPreservesExplicitPreferences:true,boundedRecords:true}));

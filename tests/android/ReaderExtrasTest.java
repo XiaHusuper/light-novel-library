@@ -1,0 +1,11 @@
+package com.xiahu.reader;
+import android.app.*;import android.content.*;import android.os.*;import android.view.*;import android.widget.*;import org.json.*;
+/** Native fixtures, no account or source requests. */
+public final class ReaderExtrasTest extends Instrumentation{
+ static void check(boolean ok,String name){if(!ok)throw new AssertionError(name);}
+ @Override public void onCreate(Bundle b){super.onCreate(b);start();}
+ @Override public void onStart(){Bundle out=new Bundle();Context c=getTargetContext();String name="reader_bookmarks_test_only";c.getSharedPreferences(name,0).edit().clear().commit();boolean ok=false;
+ try{BookmarkStore store=new BookmarkStore(c,name);JSONObject item=new JSONObject().put("id","bm_fixture").put("bookId","129").put("source","online").put("bookTitle","原创测试书").put("chapterTitle","第一章").put("chapterKey","101").put("chapterId",101).put("index",0).put("quote","一段原创的书签文字").put("category","喜欢的段落").put("anchor",new JSONObject().put("key","t:0123456789abcdef:0").put("index",2).put("fragment",0).put("fraction",.25));store.save(item);store=new BookmarkStore(c,name);check(store.all().length()==1&&store.all().getJSONObject(0).getString("category").equals("喜欢的段落"),"Bookmarks persist independent of reading history");check(store.all().getJSONObject(0).getJSONObject("anchor").getString("key").equals("t:0123456789abcdef:0"),"Stable quote anchor persisted");store.save(item.put("category","人物"));check(store.all().length()==1&&store.all().getJSONObject(0).getString("category").equals("人物"),"Categorization updates same bookmark");boolean refused=false;try{store.save(new JSONObject().put("id","bm_empty").put("bookId","129").put("source","online").put("quote",""));}catch(Exception e){refused=true;}check(refused,"Empty quote refused");store.remove("bm_fixture");check(store.all().length()==0,"Deletion persisted");
+ out.putString("report",new JSONObject().put("passed",true).put("bookmarkColdRestore",true).put("quoteAndStableAnchorStored",true).put("categoryUpdatesWithoutDuplication",true).put("emptyQuoteRejected",true).put("deletePersists",true).put("fixture","original local metadata only").toString());ok=true;
+ }catch(Throwable error){out.putString("failure",error.toString());}finally{c.getSharedPreferences(name,0).edit().clear().commit();}finish(ok?Activity.RESULT_OK:Activity.RESULT_CANCELED,out);}
+}
