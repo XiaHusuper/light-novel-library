@@ -5,9 +5,10 @@
 ```sh
 node tests/library.test.cjs
 node tests/profile.test.cjs
+node tests/recommendations.test.cjs
 ```
 
-两组测试分别覆盖书籍分类与推荐规则、阅读画像与记录管理。
+测试覆盖书籍分类、阅读画像、推荐换批与去重规则。
 
 `android/` 保存原生仪器测试，需 Android 测试设备或模拟器及测试构建环境。覆盖范围包括账号会话与书架、手动缓存、标签检索、本地目录排序、书签与插图、系统栏、关于和浏览器注册入口。
 

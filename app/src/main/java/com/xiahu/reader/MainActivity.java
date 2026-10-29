@@ -92,7 +92,7 @@ public final class MainActivity extends Activity {
                 if (message == null || message.length() > 220) message = "暂时无法完成，请重试";
                 response.put("ok", false).put("error", message);if(error instanceof WenkuAccount.WebsiteException)response.put("code",((WenkuAccount.WebsiteException)error).code);
             }
-            String script = "window.__nativeResponse(" + response.toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029") + ")";
+            String script = "window.__nativeResponse && window.__nativeResponse(" + response.toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029") + ")";
             runOnUiThread(() -> { if (alive) view.evaluateJavascript(script, null); });
         } catch (Exception ignored) {}
     }
@@ -113,7 +113,7 @@ public final class MainActivity extends Activity {
                     Object result;
                     switch (operation) {
                         case "bootstrap": result = new JSONObject().put("state", new JSONObject(prefs.getString("state", "{}")))
-                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.7.1"); break;
+                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.8.0"); break;
                         case "openRegistration": {CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{Registration.open(MainActivity.this);}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开官网注册页");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
                         case "aboutInfo": result=ProjectInfo.info(MainActivity.this);break;
                         case "aboutNotices": result=ProjectInfo.notices(MainActivity.this);break;

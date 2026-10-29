@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>轻小说文库</title>
   <link rel="stylesheet" href="app.css">
-  <script src="taxonomy.js" defer></script><script src="library.js" defer></script><script src="profile.js" defer></script><script src="epub-presentation.js" defer></script><script src="reader-pagination.js" defer></script><script src="reader-location.js" defer></script><script src="page-motion.js" defer></script><script src="local-order.js" defer></script><script src="reader-controls.js" defer></script><script src="reader-extras.js" defer></script><script src="about.js" defer></script><script src="app.js" defer></script>
+  <script src="taxonomy.js" defer></script><script src="library.js" defer></script><script src="profile.js" defer></script><script src="recommendations.js" defer></script><script src="epub-presentation.js" defer></script><script src="reader-pagination.js" defer></script><script src="reader-location.js" defer></script><script src="page-motion.js" defer></script><script src="local-order.js" defer></script><script src="reader-controls.js" defer></script><script src="reader-extras.js" defer></script><script src="about.js" defer></script><script src="app.js" defer></script>
 </head>
 <body>
   <main id="home">
@@ -14,11 +14,12 @@
     <section class="hero"><span class="eyebrow">YOUR POCKET LIBRARY</span><p>一段文字，一点不被打扰的时光。</p></section>
     <form id="searchForm" class="search-panel"><div class="segmented search-scopes" role="group" aria-label="搜索方式"><button type="button" data-search-scope="title" class="active">书名</button><button type="button" data-search-scope="author">作者</button><button type="button" data-search-scope="tags">标签</button></div><div class="search-box"><span id="searchGlyph"></span><input id="searchInput" type="search" placeholder="输入书名" autocomplete="off" enterkeyhint="search"><button type="submit">搜索</button></div></form>
     <section id="continueSection"></section>
-    <div class="section-heading"><div><span class="eyebrow" id="sectionEyebrow">EXPLORE</span><h2 id="sectionTitle">发现好故事</h2></div><button class="text-button" id="refreshButton">换一页 <span>↻</span></button></div>
+    <div id="listAnchor" aria-hidden="true"></div><div id="listHeader"><div class="section-heading"><div><span class="eyebrow" id="sectionEyebrow">EXPLORE</span><h2 id="sectionTitle">发现好故事</h2></div><button class="text-button" id="refreshButton">换一页 <span>↻</span></button></div><div id="recommendActions" class="recommend-actions hidden"><p>根据阅读画像、收藏和主动偏好，为你挑选。</p><button id="recommendPreferences" class="secondary small">调整偏好</button><button id="recommendProfile" class="text-button">阅读画像</button></div></div>
     <div id="filterRow" class="browse-controls"><div class="browse-selects"><label>榜单<select id="rankSelect"><option value="lastupdate" selected>最新更新</option><option value="allvisit">总点击排行</option><option value="allvote">总推荐排行</option><option value="monthvisit">月点击排行</option><option value="monthvote">月推荐排行</option><option value="weekvisit">周点击排行</option><option value="weekvote">周推荐排行</option><option value="dayvisit">日点击排行</option><option value="dayvote">日推荐排行</option><option value="postdate">最新入库</option><option value="goodnum">总收藏榜</option><option value="size">字数排行</option><option value="fullflag">完结小说</option></select></label><label>分类<button id="tagFilter" class="tag-filter-button">全部标签 · 多选</button></label><button id="preferencesButton" class="secondary small">阅读偏好</button></div><p id="filterNote" class="filter-note">向下滑动自动加载；标签筛选覆盖全库书目。</p></div>
-    <div id="recommendActions" class="recommend-actions hidden"><p>根据阅读画像、收藏和主动偏好，为你挑选。</p><button id="recommendPreferences" class="secondary small">调整偏好</button><button id="recommendProfile" class="text-button">阅读画像</button></div><div id="tagIndexPanel" class="tag-index-panel hidden"><span id="tagIndexProgress" role="status"></span><button id="tagIndexControl" class="text-button">继续检索</button></div><div id="localBanner" class="local-banner hidden"><div><strong>自己的书，也有位置</strong><p>支持一次多选文件，按作品合并分卷，自动整理正篇、外传与 Web。</p></div><div class="import-actions"><button class="primary small" id="importButton">导入书籍</button><button class="secondary small" id="importFolderButton">导入文件夹</button></div></div>
+    <div id="tagIndexPanel" class="tag-index-panel hidden"><span id="tagIndexProgress" role="status"></span><button id="tagIndexControl" class="text-button">继续检索</button></div><div id="localBanner" class="local-banner hidden"><div><strong>自己的书，也有位置</strong><p>支持一次多选文件，按作品合并分卷，自动整理正篇、外传与 Web。</p></div><div class="import-actions"><button class="primary small" id="importButton">导入书籍</button><button class="secondary small" id="importFolderButton">导入文件夹</button></div></div>
     <div id="grid" class="book-grid"></div>
     <div id="gridMessage" class="grid-message"></div>
+    <div id="recommendEnd" class="recommend-end hidden"><p id="recommendBatchNote" role="status"></p><button id="recommendNextBatch" class="secondary">换一批</button></div>
     <div id="feedSentinel" class="feed-sentinel" aria-hidden="true"></div><p id="feedStatus" class="feed-status" role="status"></p><button id="moreButton" class="more-button hidden">重新加载</button>
     <p class="home-note">在线内容按需读取 · 阅读进度自动保留</p>
   </main>
@@ -49,7 +50,7 @@
     <div class="setting-row"><span>字体</span><div class="segmented"><button data-font="serif">衬线</button><button data-font="sans">无衬线</button></div></div>
     <label class="setting-row status-setting"><input id="hideStatusBar" type="checkbox"><span>阅读时隐藏系统状态栏，仅保留时间和电量</span></label>
     <div class="storage-note"><span class="status-dot"></span><div><strong>在线正文与插图不自动保存</strong><p>普通阅读保留书目与进度，书签保存选中文字。主动缓存可离线使用，在“我的”里管理。</p></div></div>
-    <div class="about-line"><span>轻小说文库 · 0.7.1</span><span id="storageLabel"></span></div>
+    <div class="about-line"><span>轻小说文库 · 0.8.0</span><span id="storageLabel"></span></div>
   </section>
 
   <section id="tagFilterSheet" class="screen preference-screen hidden" aria-label="多选标签"><header class="screen-header"><button id="tagFilterClose" class="text-button">返回</button><span>按标签筛选</span><button id="tagFilterClear" class="text-button">清空</button></header><div class="preference-content"><p>可同时选择多个标签。全库书目索引自动读取并保存，不需要反复刷新；正文和插图不会因此下载。</p><input id="tagTerm" class="tag-term" type="search" placeholder="查找标签，如伪娘" autocomplete="off"><div class="segmented filter-mode"><button data-filter-mode="all">同时包含</button><button data-filter-mode="any">包含任一</button></div><div id="tagFilterGroups"></div><button id="tagFilterApply" class="primary">应用筛选</button></div></section>

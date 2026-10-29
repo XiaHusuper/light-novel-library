@@ -14,7 +14,7 @@ import java.util.*;
 import javax.crypto.*;
 import javax.crypto.spec.GCMParameterSpec;
 
-/** Account operations are serialized. Passwords are used once; only encrypted cookies persist. */
+/** Account operations and recovery are serialized; sensitive state is Keystore encrypted. */
 final class WenkuAccount {
     interface Transport {ApiClient.Exchange call(String action,String cookie)throws Exception;}
     interface Website {JSONObject page(String path,String kind,JSONObject expected)throws Exception;String cookie();void restore(String cookie)throws Exception;void clear();default void persist()throws Exception{}}
@@ -24,7 +24,7 @@ final class WenkuAccount {
     private final SharedPreferences prefs;
     private final String alias;
     private JSONObject session=new JSONObject();
-    private boolean expired,verificationRequired;
+    private boolean expired,verificationRequired,recovering;
     WenkuAccount(Context context,Transport transport)throws Exception{this(context,transport,null,"wenku_account","ShiyeWenkuSession");}
     WenkuAccount(Context context,Transport transport,Website website)throws Exception{this(context,transport,website,"wenku_account","ShiyeWenkuSession");}
     WenkuAccount(Context context,Transport transport,String store,String alias)throws Exception{
@@ -34,6 +34,7 @@ final class WenkuAccount {
         this.transport=transport;this.website=website;this.alias=alias;prefs=context.getSharedPreferences(store,Context.MODE_PRIVATE);
         String value=prefs.getString("encrypted","");
         if(!value.isEmpty())try{String[] parts=value.split(":",2);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(parts[0],Base64.NO_WRAP)));session=new JSONObject(new String(cipher.doFinal(Base64.decode(parts[1],Base64.NO_WRAP)),java.nio.charset.StandardCharsets.UTF_8));}catch(Exception ignored){prefs.edit().clear().apply();}
+        expired=session.optBoolean("recoveryBlocked");
     }
     private javax.crypto.SecretKey key()throws Exception{
         KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);
@@ -57,19 +58,24 @@ final class WenkuAccount {
         JSONObject previous=session;session=next;expired=false;verificationRequired=false;try{website.persist();save();}catch(Exception e){session=previous;throw e;}
         try{return pullWebsite(false);}catch(Exception e){markWebsiteError(e);return status().put("warning","已确认官网登录；书架暂未同步："+e.getMessage());}
     }
-    synchronized JSONObject login(String username,String password)throws Exception{
+    synchronized JSONObject login(String username,String password)throws Exception{return loginSession(username,password,"");}
+    private JSONObject loginSession(String username,String password,String expectedUid)throws Exception{
         username=username.trim();if(username.isEmpty()||username.length()>254||password.isEmpty()||password.length()>128)throw new IOException("请输入有效的文库账号和密码");
         String action="action="+(username.contains("@")?"loginemail":"login")+"&username="+ApiClient.encoded(username)+"&password="+ApiClient.encoded(password);
         ApiClient.Exchange response=transport.call(action,"");
         String result=response.body.trim();if(!result.equals("1"))throw new IOException(result.equals("2")?"用户名或邮箱不正确":result.equals("3")?"密码不正确":result.equals("4")?"来源未建立登录会话，请重新登录":"账号登录未完成，请稍后重试");
         String cookie=mergeCookies("",response.cookies);
         if(cookie.isEmpty())throw new IOException("来源未返回账号会话，请稍后重新登录");
-        return adopt(cookie);
+        return adopt(cookie,expectedUid,new JSONObject().put("username",username).put("password",password));
     }
-    synchronized JSONObject adopt(String cookie)throws Exception{
+    synchronized JSONObject adopt(String cookie)throws Exception{return adopt(cookie,"",null);}
+    private JSONObject adopt(String cookie,String expectedUid,JSONObject credentials)throws Exception{
         if(cookie.isEmpty()||cookie.length()>24000||cookie.contains("\r")||cookie.contains("\n"))throw new IOException("未找到有效的网站登录状态");
         ApiClient.Exchange response=transport.call("action=userinfo",cookie);JSONObject profile=parseProfile(response.body);
+        if(!expectedUid.isEmpty()&&!expectedUid.equals(profile.optString("uid")))throw new IOException("账号验证未通过，请重新登录");
         JSONObject next=new JSONObject().put("mode","api").put("cookie",mergeCookies(cookie,response.cookies)).put("profile",profile).put("books",new JSONArray());
+        if(credentials!=null)next.put("credentials",credentials);
+        if(recovering)next.put("recoveryAt",System.currentTimeMillis());
         // Validate before replacing an existing account. Do not merge a different user's shelf.
         String priorUid=session.optJSONObject("profile")==null?"":session.getJSONObject("profile").optString("uid");
         if(priorUid.equals(profile.optString("uid")))next.put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books"));
@@ -81,7 +87,7 @@ final class WenkuAccount {
         if(isWebsite())try{return pullWebsite(true);}catch(WebsiteException e){markWebsiteError(e);throw e;}
         requireSession();ApiClient.Exchange response=transport.call("action=bookcase&t=0",session.getString("cookie"));
         JSONArray books;
-        try{books=parseShelf(response.body);}catch(Exception error){if(response.body.trim().equals("4")){expired=true;throw new IOException("登录已失效，请重新登录；原书架已保留");}throw error;}
+        try{books=parseShelf(response.body);}catch(Exception error){if(response.body.trim().equals("4")){expired=true;if(recoverSession())return status();throw new IOException("登录已失效，请重新登录；原书架已保留");}throw error;}
         String cookie=mergeCookies(session.getString("cookie"),response.cookies);
         session.put("cookie",cookie).put("books",books).put("syncedAt",System.currentTimeMillis());save();return status();
     }
@@ -91,7 +97,7 @@ final class WenkuAccount {
         ApiClient.Exchange response;
         try{response=transport.call("action=bookcase&do="+(add?"add":"del")+"&aid="+aid,session.getString("cookie"));}
         catch(Exception failure){throw new IOException("同步结果暂未确认，请刷新云书架；不会自动重复提交");}
-        String code=response.body.trim();if(code.equals("4")){expired=true;throw new IOException("登录已失效，请重新登录");}
+        String code=response.body.trim();if(code.equals("4")){expired=true;if(recoverSession())return change(aid,add);throw new IOException("登录已失效，请重新登录");}
         if(!(code.equals("1")||code.equals(add?"5":"7")))throw new IOException(code.equals("6")?"文库书架已满，请先整理后重试":"来源未确认书架修改，请稍后同步核对");
         session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));
         JSONObject status;try{status=pull();}catch(Exception failure){throw new IOException("网站修改结果未确认，请稍后同步核对；原书架快照已保留");}
@@ -126,9 +132,24 @@ final class WenkuAccount {
         if(!confirmed)throw new IOException(uncertain==null?"网站未确认本次修改，请打开官方网页核对书架容量或账号权限":uncertain.getMessage());return status();
     }
     private void markWebsiteError(Exception e){if(e instanceof WebsiteException){String code=((WebsiteException)e).code;if(code.equals("verification"))verificationRequired=true;if(code.equals("login"))expired=true;}}
-    synchronized JSONObject logout()throws Exception{session=new JSONObject();expired=false;verificationRequired=false;prefs.edit().clear().commit();if(website!=null)website.clear();return status();}
+    synchronized JSONObject logout()throws Exception{if(!prefs.edit().clear().commit())throw new IOException("无法清除本机登录状态，请重试");session=new JSONObject();expired=false;verificationRequired=false;if(website!=null)website.clear();return status();}
     private static JSONObject displayProfile(JSONObject original)throws Exception{if(original==null)return null;JSONObject profile=new JSONObject(original.toString());for(String key:new String[]{"uname","nickname"}){String value=profile.optString(key).replaceAll("[（(]?\\s*留空则[\\s\\S]*$","").replaceAll("[（(]修改[\\s\\S]*$","").trim();profile.put(key,value);}return profile;}
-    private void requireSession()throws IOException{if(isWebsite()&&website==null)throw new IOException("请使用账号密码重新登录，原书架已保留");if(session.optString("cookie").isEmpty()||expired)throw new IOException("请先登录 Wenku8 账号");}
+    private boolean recoverSession()throws Exception{
+        JSONObject credentials=session.optJSONObject("credentials");
+        long now=System.currentTimeMillis(),last=session.optLong("recoveryAt");
+        if(recovering||isWebsite()||credentials==null||session.optBoolean("recoveryBlocked")||last>0&&now-last<15*60*1000)return false;
+        String uid=session.optJSONObject("profile")==null?"":session.getJSONObject("profile").optString("uid");
+        if(uid.isEmpty())return false;
+        JSONObject previous=new JSONObject(session.toString());recovering=true;
+        try{
+            loginSession(credentials.optString("username"),credentials.optString("password"),uid);
+            if(expired)throw new IOException("账号登录未完成");
+            session.put("recoveryAt",now);save();return true;
+        }catch(Exception failure){
+            session=previous;expired=true;session.put("recoveryBlocked",true).put("recoveryAt",now);save();return false;
+        }finally{recovering=false;}
+    }
+    private void requireSession()throws Exception{if(isWebsite()&&website==null)throw new IOException("请使用账号密码重新登录，原书架已保留");if(expired&&!recoverSession())throw new IOException("登录已失效，请重新登录；原书架已保留");if(session.optString("cookie").isEmpty())throw new IOException("请先登录 Wenku8 账号");}
     static JSONObject parseProfile(String xml)throws Exception{
         if(xml.trim().equals("4"))throw new IOException("登录会话未生效，请重新登录");
         Document doc;try{doc=ApiClient.xml(xml);}catch(Exception e){throw new IOException("来源未返回有效账号资料");}
