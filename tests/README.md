@@ -1,11 +1,14 @@
-# Tests
+# 测试
 
-`node tests/library.test.cjs` checks classification, cross-file routing, category budgets, exclusions and rotation.
+在项目根目录运行：
 
-`node tests/profile.test.cjs` checks daily browse upgrades, reading thresholds, half-life, score caps, reset semantics and bounded records.
+```sh
+node tests/library.test.cjs
+node tests/profile.test.cjs
+```
 
-`android/AccountTest.java` is the source of the isolated Android instrumentation test used for the account model. It uses a synthetic in-memory transport and a separate Keystore alias/preferences name; it never accesses a real Wenku8 account. The shipped application does not include this fixture code. A successful fixture run is not evidence of a successful authenticated live-server request.
+两组测试分别覆盖书籍分类与推荐规则、阅读画像与记录管理。
 
-0.4.0: `OfflineTest.java` uses generated text/PNG to test explicit-only cache, serial volume requests, resume, offline reload, quota, cancellation, per-book image isolation and native safe Insets. `AccountTest.java` additionally checks independent website sessions, complete grouped shelves, row IDs, membership readback and absence of chapter/bookmark writes. Browsing history and reading progress remain device-only by design.
+`android/` 保存原生仪器测试，需 Android 测试设备或模拟器及测试构建环境。覆盖范围包括账号会话与书架、手动缓存、标签检索、本地目录排序、书签与插图、系统栏、关于和浏览器注册入口。
 
-0.7.0: `AboutTest.java` reads the actual installed version, validates the private GitHub login destinations and bundled offline notices without network calls. Bookmark category UI tests cover existing/new/uncategorized selections, cancellation, empty-name validation and reserved category names.
+账号测试使用隔离的合成数据，不需要真实 Wenku8 凭据。测试代码不包含在发行 APK 中。
