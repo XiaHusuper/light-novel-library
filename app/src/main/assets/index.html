@@ -49,7 +49,7 @@
     <div class="setting-row"><span>字体</span><div class="segmented"><button data-font="serif">衬线</button><button data-font="sans">无衬线</button></div></div>
     <label class="setting-row status-setting"><input id="hideStatusBar" type="checkbox"><span>阅读时隐藏系统状态栏，仅保留时间和电量</span></label>
     <div class="storage-note"><span class="status-dot"></span><div><strong>在线正文与插图不自动保存</strong><p>普通阅读保留书目与进度，书签保存选中文字。主动缓存可离线使用，在“我的”里管理。</p></div></div>
-    <div class="about-line"><span>轻小说文库 · 0.7.0</span><span id="storageLabel"></span></div>
+    <div class="about-line"><span>轻小说文库 · 0.7.1</span><span id="storageLabel"></span></div>
   </section>
 
   <section id="tagFilterSheet" class="screen preference-screen hidden" aria-label="多选标签"><header class="screen-header"><button id="tagFilterClose" class="text-button">返回</button><span>按标签筛选</span><button id="tagFilterClear" class="text-button">清空</button></header><div class="preference-content"><p>可同时选择多个标签。全库书目索引自动读取并保存，不需要反复刷新；正文和插图不会因此下载。</p><input id="tagTerm" class="tag-term" type="search" placeholder="查找标签，如伪娘" autocomplete="off"><div class="segmented filter-mode"><button data-filter-mode="all">同时包含</button><button data-filter-mode="any">包含任一</button></div><div id="tagFilterGroups"></div><button id="tagFilterApply" class="primary">应用筛选</button></div></section>
@@ -58,7 +58,7 @@
 
   <section id="accountScreen" class="mine-page hidden" aria-label="我的">
     <header class="mine-header"><div><span class="eyebrow">MY READING SPACE</span><h1>我的</h1></div></header>
-    <div class="mine-account"><img class="brand-mark" src="brand-icon.svg" alt="轻小说文库"><div id="accountSummary"></div><button id="accountLogin" class="primary small">登录 Wenku8</button></div>
+    <div class="mine-account"><img class="brand-mark" src="brand-icon.svg" alt="轻小说文库"><div id="accountSummary"></div><div class="mine-auth-actions"><button id="accountLogin" class="primary small">登录 Wenku8</button><button id="accountRegister" class="text-button">注册 Wenku8 账号</button></div></div>
     <div class="mine-links"><button id="settingsButton"><span><strong>阅读设置</strong><small>字号、纸张、翻页方式</small></span><span>›</span></button><button id="bookmarkButton"><span><strong>书签</strong><small id="bookmarkCount">0 条 · 本机保存</small></span><span>›</span></button><button id="historyButton"><span><strong>历史记录</strong><small id="historyCount">本机记录 · 无需登录</small></span><span>›</span></button><button id="cacheButton"><span><strong>离线缓存</strong><small id="cacheUsage">手动保存 · 空间可控</small></span><span>›</span></button><button id="profileButton"><span><strong>阅读画像</strong><small>兴趣标签与阅读习惯 · 无需登录</small></span><span>›</span></button><button id="aboutButton"><span><strong>关于</strong><small>版本、更新与开源许可证</small></span><span>›</span></button></div>
     <div class="mine-cloud"><div class="mine-section-title"><h2>账号同步</h2><button id="accountRefresh" class="text-button">立即同步</button></div><p id="accountMessage" class="profile-help" role="status"></p><div class="account-actions"><button id="accountUpload" class="secondary hidden">上传本机收藏到 Wenku8</button><button id="accountLogout" class="text-button hidden">退出账号</button></div><p class="profile-help">登录后可同步官网书架；在 App 收藏或移出在线小说，也会同步到 Wenku8 账号。</p><p class="profile-help">已有本机收藏可选择上传。浏览记录、章节位置、阅读时间和画像只保留在本机，不参与账号同步；本地 EPUB/TXT 不上传。</p></div>
   </section>

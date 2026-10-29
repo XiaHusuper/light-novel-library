@@ -105,7 +105,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             if("accountLogin".equals(operation)){runOnUiThread(()->showLogin(id));return;}
-            ExecutorService executor = operation.startsWith("account")?accounts:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage").contains(operation) ? files : network;
+            ExecutorService executor = operation.startsWith("account")?accounts:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage", "openRegistration").contains(operation) ? files : network;
             executor.execute(() -> {
                 try {
                     JSONObject input = new JSONObject(json);
@@ -113,7 +113,8 @@ public final class MainActivity extends Activity {
                     Object result;
                     switch (operation) {
                         case "bootstrap": result = new JSONObject().put("state", new JSONObject(prefs.getString("state", "{}")))
-                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.7.0"); break;
+                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.7.1"); break;
+                        case "openRegistration": {CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{Registration.open(MainActivity.this);}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开官网注册页");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
                         case "aboutInfo": result=ProjectInfo.info(MainActivity.this);break;
                         case "aboutNotices": result=ProjectInfo.notices(MainActivity.this);break;
                         case "openProjectPage": {Uri target=ProjectInfo.page(input.optString("page"));CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,target));}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开 GitHub");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
@@ -269,12 +270,14 @@ public final class MainActivity extends Activity {
         TextView note=new TextView(this);note.setText("使用文库账号登录并同步书架。历史与阅读位置保留在本机。");layout.addView(note);
         EditText username=new EditText(this);username.setHint("用户名或邮箱");username.setContentDescription("用户名或邮箱");username.setSingleLine(true);username.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);username.setSaveEnabled(false);layout.addView(username);
         EditText password=new EditText(this);password.setHint("密码");password.setContentDescription("密码");password.setSingleLine(true);password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setSaveEnabled(false);layout.addView(password);
+        Button register=new Button(this,null,android.R.attr.borderlessButtonStyle);register.setText("注册 Wenku8 账号");register.setAllCaps(false);register.setTextSize(12);register.setTextColor(Color.rgb(53,92,77));register.setMinHeight((int)(44*getResources().getDisplayMetrics().density));LinearLayout.LayoutParams registerParams=new LinearLayout.LayoutParams(-2,-2);registerParams.gravity=Gravity.END;layout.addView(register,registerParams);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("登录 Wenku8").setView(layout).setPositiveButton("登录",null).setNegativeButton("取消",null).create();boolean[] completed={false};
+        register.setOnClickListener(v->{try{Registration.open(MainActivity.this);dialog.dismiss();}catch(ActivityNotFoundException error){note.setText("请安装浏览器后打开官网注册页");}});
         dialog.setOnDismissListener(d->{password.setText("");loginShowing=false;if(!completed[0])reply(id,new JSONObject(),null);});
         dialog.setOnShowListener(d->{Button submit=dialog.getButton(AlertDialog.BUTTON_POSITIVE),cancel=dialog.getButton(AlertDialog.BUTTON_NEGATIVE);submit.setOnClickListener(v->{
             String name=username.getText().toString().trim(),secret=password.getText().toString();if(name.isEmpty()||secret.isEmpty()){note.setText("请输入用户名或邮箱及密码");return;}
-            password.setText("");submit.setEnabled(false);cancel.setEnabled(false);username.setEnabled(false);password.setEnabled(false);dialog.setCancelable(false);note.setText("正在登录并读取书架…");
-            accounts.execute(()->{try{JSONObject status=account.login(name,secret);runOnUiThread(()->{completed[0]=true;dialog.dismiss();reply(id,status,null);});}catch(Exception failure){runOnUiThread(()->{submit.setEnabled(true);cancel.setEnabled(true);username.setEnabled(true);password.setEnabled(true);dialog.setCancelable(true);note.setText(failure.getMessage());password.requestFocus();});}});
+            password.setText("");submit.setEnabled(false);cancel.setEnabled(false);register.setEnabled(false);username.setEnabled(false);password.setEnabled(false);dialog.setCancelable(false);note.setText("正在登录并读取书架…");
+            accounts.execute(()->{try{JSONObject status=account.login(name,secret);runOnUiThread(()->{completed[0]=true;dialog.dismiss();reply(id,status,null);});}catch(Exception failure){runOnUiThread(()->{submit.setEnabled(true);cancel.setEnabled(true);register.setEnabled(true);username.setEnabled(true);password.setEnabled(true);dialog.setCancelable(true);note.setText(failure.getMessage());password.requestFocus();});}});
         });});dialog.show();dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
     private void pickFiles(String id, boolean folder) {
