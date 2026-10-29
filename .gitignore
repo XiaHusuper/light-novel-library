@@ -11,3 +11,6 @@ dist/
 
 # Local development memory; not application source.
 TASK.md
+
+__pycache__/
+*.pyc

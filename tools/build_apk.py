@@ -67,8 +67,8 @@ if args.debug:
 (BUILD / 'AndroidManifest.xml').write_text(manifest, encoding='utf-8')
 run(executable(TOOLS, 'aapt2'), 'link', '-o', BUILD / 'resources.apk', '-I', platform,
     '--manifest', BUILD / 'AndroidManifest.xml', '--java', BUILD / 'generated',
-    '--min-sdk-version', '26', '--target-sdk-version', '35', '--version-code', '14',
-    '--version-name', '0.8.0', BUILD / 'resources.zip')
+    '--min-sdk-version', '26', '--target-sdk-version', '35', '--version-code', '15',
+    '--version-name', '0.8.1', BUILD / 'resources.zip')
 sources = list((ROOT / 'app/src/main/java').rglob('*.java')) + list((BUILD / 'generated').rglob('*.java'))
 run(executable(JAVA / 'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8',
     '-bootclasspath', str(TOOLS / 'core-lambda-stubs.jar') + os.pathsep + str(platform),
@@ -99,7 +99,7 @@ if not keystore.exists():
         '-alias', 'shiyereader', '-keyalg', 'RSA', '-keysize', '3072', '-validity', '10000',
         '-dname', 'CN=Shiye Reader, O=Personal Reader, C=CN', '-storetype', 'JKS')
 args.out.mkdir(parents=True, exist_ok=True)
-apk = args.out / ('LightNovelLibrary-0.8.0-debug.apk' if args.debug else 'LightNovelLibrary-0.8.0.apk')
+apk = args.out / ('LightNovelLibrary-0.8.1-debug.apk' if args.debug else 'LightNovelLibrary-0.8.1.apk')
 run(executable(TOOLS, 'apksigner', True), 'sign', '--ks', keystore, '--ks-key-alias', 'shiyereader',
     '--ks-pass', 'env:SHIYE_BUILD_PASSWORD', '--key-pass', 'env:SHIYE_BUILD_PASSWORD',
     '--out', apk, BUILD / 'aligned.apk')

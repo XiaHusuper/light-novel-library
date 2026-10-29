@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
     private LocalBooks local;
     private OfflineCache offline;
     private TagCatalog tags;
-    private WenkuAccount account;
+    private WenkuAccount account;private AppUpdater updater;
     private final ExecutorService accounts=Executors.newSingleThreadExecutor();
     private boolean loginShowing;
     private SharedPreferences prefs;
@@ -45,6 +45,7 @@ public final class MainActivity extends Activity {
         try{offline=new OfflineCache(this,api);}catch(Exception ignored){}
         root=new FrameLayout(this);
         try{account=new WenkuAccount(this,api::exchange);}catch(Exception ignored){}
+        try{updater=AppUpdater.get(this);}catch(Exception ignored){}
         view = new ReaderWebView(this);
         WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         view.setBackgroundColor(Color.rgb(246, 244, 236));
@@ -105,7 +106,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             if("accountLogin".equals(operation)){runOnUiThread(()->showLogin(id));return;}
-            ExecutorService executor = operation.startsWith("account")?accounts:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage", "openRegistration").contains(operation) ? files : network;
+            ExecutorService executor = operation.startsWith("account")?accounts:operation.startsWith("update")?files:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage", "openRegistration").contains(operation) ? files : network;
             executor.execute(() -> {
                 try {
                     JSONObject input = new JSONObject(json);
@@ -113,8 +114,15 @@ public final class MainActivity extends Activity {
                     Object result;
                     switch (operation) {
                         case "bootstrap": result = new JSONObject().put("state", new JSONObject(prefs.getString("state", "{}")))
-                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.8.0"); break;
+                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.8.1"); break;
                         case "openRegistration": {CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{Registration.open(MainActivity.this);}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开官网注册页");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
+                        case "updateAutoCheck": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.autoCheck();break;
+                        case "updateDefer": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.defer();break;
+                        case "updateCheck": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.check();break;
+                        case "updateStatus": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.status();break;
+                        case "updateDownload": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.download();break;
+                        case "updateCancel": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.cancel();break;
+                        case "updateInstall": {if(updater==null)throw new IOException("更新服务暂不可用");Intent install=updater.installIntent();if(!getPackageManager().canRequestPackageInstalls())updater.markInstallPending();CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];boolean[] permission=new boolean[1];runOnUiThread(()->{try{permission[0]=!getPackageManager().canRequestPackageInstalls();if(permission[0]){startActivityForResult(AppUpdater.permissionIntent(MainActivity.this),81);}else{updater.clearInstallPending();startActivityForResult(install,82);}}catch(Exception e){updater.clearInstallPending();failure[0]=e;}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS)||failure[0]!=null)throw new IOException("无法打开系统安装界面");result=updater.status().put("permissionRequired",permission[0]);break;}
                         case "aboutInfo": result=ProjectInfo.info(MainActivity.this);break;
                         case "aboutNotices": result=ProjectInfo.notices(MainActivity.this);break;
                         case "openProjectPage": {Uri target=ProjectInfo.page(input.optString("page"));CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,target));}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开 GitHub");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
@@ -290,6 +298,8 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==81){resumeUpdateInstall();return;}
+        if(requestCode==82)return;
         if ((requestCode != 21 && requestCode != 22) || importRequest == null) return;
         String id = importRequest; importRequest = null;
         if (resultCode != RESULT_OK || data == null) { reply(id, new JSONObject(), null); return; }
@@ -404,7 +414,8 @@ public final class MainActivity extends Activity {
         if (local != null) local.clearMemory();
     }
     @Override protected void onPause(){if(view!=null)view.evaluateJavascript("window.App && window.App.setForeground(false)",null);super.onPause();}
-    @Override protected void onResume(){super.onResume();if(view!=null)view.evaluateJavascript("window.App && window.App.setForeground(true)",null);}
+    private void resumeUpdateInstall(){if(updater==null||!alive)return;files.execute(()->{if(!alive||!getPackageManager().canRequestPackageInstalls()||!updater.pendingInstall())return;try{Intent install=updater.installIntent();updater.clearInstallPending();runOnUiThread(()->{if(alive)try{startActivityForResult(install,82);}catch(Exception e){Toast.makeText(this,"无法打开系统安装界面",Toast.LENGTH_LONG).show();}});}catch(Exception e){updater.clearInstallPending();runOnUiThread(()->{if(alive)Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}});}
+    @Override protected void onResume(){super.onResume();resumeUpdateInstall();if(view!=null)view.evaluateJavascript("window.App && window.App.setForeground(true)",null);}
     @Override public void onLowMemory(){super.onLowMemory();api.clearMemory();}
     @Override protected void onDestroy() {
         alive = false;if(readerSystemUi!=null)readerSystemUi.destroy();

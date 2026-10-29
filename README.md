@@ -21,7 +21,7 @@
 - Android 8.0 及以上，支持 ARM64 手机和 x86_64 设备。
 - 无需电脑或本地服务，在线功能需能访问 Wenku8 相关服务。
 - 本地阅读、历史记录、阅读位置、书签和画像无需登录。
-- 同一签名的新版 APK 可直接覆盖安装。
+- 同一签名的新版 APK 可直接覆盖安装。0.8.1 起提供启动更新提醒，也可在“我的 → 关于 → 检查更新”内下载新版本，再由系统确认安装。更早版本需先手动升级一次。
 
 ## 数据与同步
 
@@ -44,6 +44,8 @@ python tools/build_apk.py
 ```
 
 脚本默认在 `dist/` 生成 APK，签名密钥保存在 `.signing/`。请妥善保管密钥，后续覆盖升级需使用相同签名；发行密钥不随仓库分发。测试入口见 [tests/README.md](tests/README.md)。
+
+发布前运行 `python tools/package_release.py`，生成源码归档、校验文件和 `LightNovelLibrary-update.json`。将这些文件与 APK 一起上传到同一 GitHub Release，应用内更新即可读取。
 
 ## 来源与致谢
 
