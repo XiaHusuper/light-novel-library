@@ -36,6 +36,16 @@ final class WenkuAccount {
         if(!value.isEmpty())try{String[] parts=value.split(":",2);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(parts[0],Base64.NO_WRAP)));session=new JSONObject(new String(cipher.doFinal(Base64.decode(parts[1],Base64.NO_WRAP)),java.nio.charset.StandardCharsets.UTF_8));}catch(Exception ignored){prefs.edit().clear().apply();}
         expired=session.optBoolean("recoveryBlocked");
     }
+    private ApiClient.Exchange exchange(String action,String cookie)throws Exception{
+        String operation=action.startsWith("action=login")?"login":action.equals("action=userinfo")?"identity":action.startsWith("action=bookcase&do=add")?"add":action.startsWith("action=bookcase&do=del")?"remove":action.startsWith("action=bookcase&do=list")?"shelf-ids":"shelf";
+        long started=android.os.SystemClock.elapsedRealtime();
+        try{
+            ApiClient.Exchange response=transport.call(action,cookie);
+            String body=response.body.trim(),result=body.matches("[1-7]")?body:body.startsWith("<")?"document":"other";
+            android.util.Log.i("ReaderShelf","request="+operation+" result="+result+" chars="+body.length()+" cookieUpdates="+response.cookies.size()+" elapsedMs="+(android.os.SystemClock.elapsedRealtime()-started));
+            return response;
+        }catch(Exception failure){android.util.Log.i("ReaderShelf","request="+operation+" error="+failure.getClass().getSimpleName()+" elapsedMs="+(android.os.SystemClock.elapsedRealtime()-started));throw failure;}
+    }
     private javax.crypto.SecretKey key()throws Exception{
         KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);
         if(!store.containsAlias(alias)){KeyGenerator generator=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");generator.init(new KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());generator.generateKey();}
@@ -46,7 +56,7 @@ final class WenkuAccount {
         String encoded=Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(session.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)),Base64.NO_WRAP);
         if(!prefs.edit().putString("encrypted",encoded).commit())throw new IOException("无法安全保存登录状态，请重试");
     }
-    synchronized JSONObject status()throws Exception{return new JSONObject().put("signedIn",!session.optString("cookie").isEmpty()&&!expired&&!(isWebsite()&&website==null)).put("requiresApiLogin",isWebsite()&&website==null).put("website",isWebsite()).put("expired",expired).put("verificationRequired",verificationRequired).put("profile",displayProfile(session.optJSONObject("profile"))).put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books")).put("syncedAt",session.optLong("syncedAt"));}
+    synchronized JSONObject status()throws Exception{return new JSONObject().put("signedIn",!session.optString("cookie").isEmpty()&&!expired&&!(isWebsite()&&website==null)).put("requiresApiLogin",isWebsite()&&website==null).put("website",isWebsite()).put("expired",expired).put("verificationRequired",verificationRequired).put("profile",displayProfile(session.optJSONObject("profile"))).put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books")).put("syncedAt",session.optLong("syncedAt")).put("pendingShelfCount",session.optJSONObject("pendingShelf")==null?0:session.optJSONObject("pendingShelf").length()).put("warning",session.optString("shelfWarning"));}
     private boolean isWebsite(){return session.optString("mode").equals("website");}
     synchronized JSONObject adoptWebsite()throws Exception{
         if(website==null)throw new IOException("官网会话暂不可用");
@@ -62,7 +72,7 @@ final class WenkuAccount {
     private JSONObject loginSession(String username,String password,String expectedUid)throws Exception{
         username=username.trim();if(username.isEmpty()||username.length()>254||password.isEmpty()||password.length()>128)throw new IOException("请输入有效的文库账号和密码");
         String action="action="+(username.contains("@")?"loginemail":"login")+"&username="+ApiClient.encoded(username)+"&password="+ApiClient.encoded(password);
-        ApiClient.Exchange response=transport.call(action,"");
+        ApiClient.Exchange response=exchange(action,"");
         String result=response.body.trim();if(!result.equals("1"))throw new IOException(result.equals("2")?"用户名或邮箱不正确":result.equals("3")?"密码不正确":result.equals("4")?"来源未建立登录会话，请重新登录":"账号登录未完成，请稍后重试");
         String cookie=mergeCookies("",response.cookies);
         if(cookie.isEmpty())throw new IOException("来源未返回账号会话，请稍后重新登录");
@@ -71,37 +81,102 @@ final class WenkuAccount {
     synchronized JSONObject adopt(String cookie)throws Exception{return adopt(cookie,"",null);}
     private JSONObject adopt(String cookie,String expectedUid,JSONObject credentials)throws Exception{
         if(cookie.isEmpty()||cookie.length()>24000||cookie.contains("\r")||cookie.contains("\n"))throw new IOException("未找到有效的网站登录状态");
-        ApiClient.Exchange response=transport.call("action=userinfo",cookie);JSONObject profile=parseProfile(response.body);
+        ApiClient.Exchange response=exchange("action=userinfo",cookie);JSONObject profile=parseProfile(response.body);
         if(!expectedUid.isEmpty()&&!expectedUid.equals(profile.optString("uid")))throw new IOException("账号验证未通过，请重新登录");
         JSONObject next=new JSONObject().put("mode","api").put("cookie",mergeCookies(cookie,response.cookies)).put("profile",profile).put("books",new JSONArray());
         if(credentials!=null)next.put("credentials",credentials);
         if(recovering)next.put("recoveryAt",System.currentTimeMillis());
         // Validate before replacing an existing account. Do not merge a different user's shelf.
         String priorUid=session.optJSONObject("profile")==null?"":session.getJSONObject("profile").optString("uid");
-        if(priorUid.equals(profile.optString("uid")))next.put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books"));
+        if(priorUid.equals(profile.optString("uid"))){next.put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books"));if(session.optJSONObject("pendingShelf")!=null)next.put("pendingShelf",new JSONObject(session.getJSONObject("pendingShelf").toString()));}
         JSONObject previous=session;session=next;expired=false;verificationRequired=false;
         try{save();}catch(Exception error){session=previous;throw error;}
         try{return pull();}catch(Exception ignored){return status().put("warning","已登录，书架暂时未能同步，请稍后重试");}
     }
     synchronized JSONObject pull()throws Exception{
         if(isWebsite())try{return pullWebsite(true);}catch(WebsiteException e){markWebsiteError(e);throw e;}
-        requireSession();ApiClient.Exchange response=transport.call("action=bookcase&t=0",session.getString("cookie"));
-        JSONArray books;
-        try{books=parseShelf(response.body);}catch(Exception error){if(response.body.trim().equals("4")){expired=true;if(recoverSession())return status();throw new IOException("登录已失效，请重新登录；原书架已保留");}throw error;}
-        String cookie=mergeCookies(session.getString("cookie"),response.cookies);
-        session.put("cookie",cookie).put("books",books).put("syncedAt",System.currentTimeMillis());save();return status();
+        requireSession();
+        JSONArray previous=session.optJSONArray("books"),ids=readShelfIds(),named=null;
+        boolean needsNames=false;
+        for(int i=0;i<ids.length();i++){
+            JSONObject id=ids.getJSONObject(i);boolean known=false;
+            if(previous!=null)for(int j=0;j<previous.length();j++){JSONObject book=previous.getJSONObject(j);if(book.optString("id").equals(id.optString("id"))&&!book.optString("title").matches("书籍 \\d+")){known=true;break;}}
+            if(!known){needsNames=true;break;}
+        }
+        // The rich listing can lag behind successful writes. Use it only for
+        // display names; it must never override membership from the ID endpoint.
+        if(needsNames)try{
+            ApiClient.Exchange response=exchange("action=bookcase&t=0",session.getString("cookie"));
+            named=parseShelf(response.body);session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));
+        }catch(Exception ignored){}
+        JSONArray books=reconcileShelf(withShelfNames(ids,named,previous),true);
+        session.put("books",books).put("syncedAt",System.currentTimeMillis());save();return status();
     }
     synchronized JSONObject change(int aid,boolean add)throws Exception{
         requireSession();if(aid<=0||aid>1000000)throw new IOException("无效书籍编号");
         if(isWebsite())try{return changeWebsite(aid,add);}catch(WebsiteException e){markWebsiteError(e);throw e;}
-        ApiClient.Exchange response;
-        try{response=transport.call("action=bookcase&do="+(add?"add":"del")+"&aid="+aid,session.getString("cookie"));}
-        catch(Exception failure){throw new IOException("同步结果暂未确认，请刷新云书架；不会自动重复提交");}
-        String code=response.body.trim();if(code.equals("4")){expired=true;if(recoverSession())return change(aid,add);throw new IOException("登录已失效，请重新登录");}
-        if(!(code.equals("1")||code.equals(add?"5":"7")))throw new IOException(code.equals("6")?"文库书架已满，请先整理后重试":"来源未确认书架修改，请稍后同步核对");
-        session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));
-        JSONObject status;try{status=pull();}catch(Exception failure){throw new IOException("网站修改结果未确认，请稍后同步核对；原书架快照已保留");}
-        if((find(aid)!=null)!=add)throw new IOException("网站书架尚未反映这次修改，请稍后同步核对");return status;
+        android.util.Log.i("ReaderShelf","change=start add="+add+" expired="+expired+" savedCredentials="+session.has("credentials"));
+        verifyApiIdentity();
+        // A retry is allowed only after a definite session rejection.
+        // A lost response or a slow shelf listing must never replay a write.
+        for(int attempt=0;attempt<2;attempt++){
+            ApiClient.Exchange response;
+            try{response=exchange("action=bookcase&do="+(add?"add":"del")+"&aid="+aid,session.getString("cookie"));}
+            catch(Exception failure){throw new IOException("同步结果暂未确认，请刷新云书架；不会自动重复提交");}
+            String code=response.body.trim();
+            if(code.equals("4")){
+                expired=true;
+                if(attempt==0&&recoverSession())continue;
+                throw new IOException("登录已失效，请重新登录；原书架已保留");
+            }
+            if(!(code.equals("1")||code.equals(add?"5":"7")))throw new IOException(code.equals("6")?"文库书架已满，请先整理后重试":"来源未确认书架修改，请稍后同步核对");
+            session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));
+            JSONObject pending=session.optJSONObject("pendingShelf");if(pending==null)pending=new JSONObject();
+            pending.put(String.valueOf(aid),new JSONObject().put("add",add).put("at",System.currentTimeMillis()));session.put("pendingShelf",pending).remove("shelfWarning");
+            JSONArray books=session.optJSONArray("books");session.put("books",reconcileShelf(books==null?new JSONArray():books,false));save();
+            android.util.Log.i("ReaderShelf","change=acknowledged add="+add+" code="+code+" pending="+pending.length());
+            return status();
+        }
+        throw new IOException("账号暂未确认书架修改，请稍后重试");
+    }
+    private JSONArray reconcileShelf(JSONArray remote,boolean confirm)throws Exception{
+        JSONObject pending=session.optJSONObject("pendingShelf");if(pending==null||pending.length()==0)return remote;
+        LinkedHashMap<String,JSONObject> books=new LinkedHashMap<>();for(int i=0;i<remote.length();i++){JSONObject book=remote.getJSONObject(i);books.put(book.optString("id"),book);}
+        List<String> keys=new ArrayList<>();Iterator<String> iterator=pending.keys();while(iterator.hasNext())keys.add(iterator.next());
+        int unconfirmed=0;long now=System.currentTimeMillis();
+        for(String id:keys){
+            JSONObject intent=pending.getJSONObject(id);boolean add=intent.getBoolean("add"),present=books.containsKey(id);
+            if(confirm&&present==add){pending.remove(id);continue;}
+            if(confirm&&now-intent.optLong("at")>30*60*1000){pending.remove(id);unconfirmed++;continue;}
+            if(add&&!present){JSONObject known=find(Integer.parseInt(id));if(known==null)known=parseShelf("<metadata><book aid=\""+id+"\"/></metadata>").getJSONObject(0);books.put(id,known);}
+            if(!add)books.remove(id);
+        }
+        if(unconfirmed>0)session.put("shelfWarning","网站书架暂未核对上之前的修改，已显示网站当前列表，请检查后重试");
+        android.util.Log.i("ReaderShelf","pull=reconcile pending="+pending.length()+" expired="+unconfirmed+" count="+books.size());
+        JSONArray result=new JSONArray();for(JSONObject book:books.values())result.put(book);return result;
+    }
+    private void verifyApiIdentity()throws Exception{
+        ApiClient.Exchange response=exchange("action=userinfo",session.getString("cookie"));
+        if(response.body.trim().equals("4")){
+            expired=true;if(recoverSession())return;
+            throw new IOException("登录已失效，请重新登录；原书架已保留");
+        }
+        JSONObject profile=parseProfile(response.body);
+        if(!profile.optString("uid").equals(session.getJSONObject("profile").optString("uid")))throw new IOException("账号验证未通过，请重新登录；原书架已保留");
+        session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies)).put("profile",profile);save();
+    }
+    private JSONArray readShelfIds()throws Exception{
+        ApiClient.Exchange response=exchange("action=bookcase&do=list&t=0",session.getString("cookie"));
+        if(response.body.trim().equals("4")){
+            expired=true;if(recoverSession())return session.getJSONArray("books");
+            throw new IOException("登录已失效，请重新登录");
+        }
+        JSONArray books=parseShelf(response.body);session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));return books;
+    }
+    private static JSONArray withShelfNames(JSONArray ids,JSONArray... sources)throws Exception{
+        Map<String,JSONObject> known=new HashMap<>();
+        for(int i=sources.length-1;i>=0;i--){JSONArray source=sources[i];if(source!=null)for(int j=0;j<source.length();j++){JSONObject book=source.getJSONObject(j);if(!book.optString("title").matches("书籍 \\d+"))known.put(book.optString("id"),book);}}
+        JSONArray result=new JSONArray();for(int i=0;i<ids.length();i++){JSONObject book=ids.getJSONObject(i),prior=known.get(book.optString("id"));if(prior!=null&&book.optString("title").matches("书籍 \\d+")){JSONObject merged=new JSONObject(prior.toString());for(String key:new String[]{"id","source","cover","favorite","cloud"})merged.put(key,book.get(key));book=merged;}result.put(book);}return result;
     }
     private JSONObject pullWebsite(boolean verify)throws Exception{
         requireSession();if(website==null)throw new IOException("请重新打开官方网页登录");website.restore(session.getString("cookie"));

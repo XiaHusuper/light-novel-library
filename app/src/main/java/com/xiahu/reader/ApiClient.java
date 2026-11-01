@@ -49,6 +49,12 @@ final class ApiClient {
             connection.setFixedLengthStreamingMode(payload.length);
             try (OutputStream output = connection.getOutputStream()) { output.write(payload); }
             checkStatus(connection);
+            if(!cookie.isEmpty()){
+                String cache=connection.getHeaderField("CF-Cache-Status"),age=connection.getHeaderField("Age");
+                cache=cache!=null&&cache.matches("[A-Za-z_-]{1,24}")?cache:"none";
+                age=age!=null&&age.matches("[0-9]{1,12}")?age:"none";
+                android.util.Log.i("ReaderShelf","network cache="+cache+" age="+age);
+            }
             try (InputStream input = decodedStream(connection)) {
                 String text = new String(readLimited(input, 3 * 1024 * 1024), StandardCharsets.UTF_8);
                 if (text.trim().isEmpty() || text.contains("<h1>Welcome</h1>")) throw new IOException("接口没有返回书籍内容，请稍后重试");

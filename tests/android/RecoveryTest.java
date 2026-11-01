@@ -22,7 +22,7 @@ public final class RecoveryTest extends Instrumentation {
    }
    if(action.equals("action=userinfo"))return new ApiClient.Exchange("<metadata><item name=\"uname\">reader-fixture</item><item name=\"uid\">"+uid+"</item></metadata>",Collections.emptyList());
    if(expired||!cookie.contains(token))return new ApiClient.Exchange("4",Collections.emptyList());
-   if(action.startsWith("action=bookcase&do=")){writes++;return new ApiClient.Exchange("1",Collections.emptyList());}
+   if(action.startsWith("action=bookcase&do=add")||action.startsWith("action=bookcase&do=del")){writes++;return new ApiClient.Exchange("1",Collections.emptyList());}
    return new ApiClient.Exchange("<metadata><book aid=\"129\"><name>Original fixture</name></book></metadata>",Collections.emptyList());
   }
  }
