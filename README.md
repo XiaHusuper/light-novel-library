@@ -59,4 +59,5 @@ python tools/build_apk.py
 
 ## 联系
 
-如本项目涉及侵权，请联系 [1807701563a@gmail.com](mailto:1807701563a@gmail.com)，我们将及时核实并处理。
+如本项目涉及侵权，或发现app的bug，请联系 [1807701563a@gmail.com](mailto:1807701563a@gmail.com)，我将及时核实并处理。
+
