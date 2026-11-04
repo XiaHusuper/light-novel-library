@@ -1,5 +1,7 @@
 # 轻小说文库
 
+如果你喜欢这个项目，请点亮一颗 ⭐ Star，让更多轻小说爱好者发现它。
+
 面向 [Wenku8（轻小说文库）](https://www.wenku8.net/) 的 Android 阅读器，支持在线阅读、书架同步和本地 EPUB/TXT 书库。
 
 [下载最新版](https://github.com/XiaHusuper/light-novel-library/releases/latest) · [更新日志](CHANGELOG.md) · [分类与推荐](ALGORITHMS.md)
