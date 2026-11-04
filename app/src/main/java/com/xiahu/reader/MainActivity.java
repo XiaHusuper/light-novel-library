@@ -28,7 +28,9 @@ public final class MainActivity extends Activity {
     private LocalBooks local;
     private OfflineCache offline;
     private TagCatalog tags;
-    private WenkuAccount account;private AppUpdater updater;
+    private WenkuAccount account;private AppUpdater updater;private WenkuWebUpdates officialUpdates;
+    private volatile String officialCookieOwner="";
+    private final java.util.concurrent.atomic.AtomicInteger officialGeneration=new java.util.concurrent.atomic.AtomicInteger();
     private final ExecutorService accounts=Executors.newSingleThreadExecutor();
     private boolean loginShowing;
     private SharedPreferences prefs;
@@ -105,16 +107,20 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> pickFiles(id, "importFolder".equals(operation)));
                 return;
             }
+            if("officialUpdatesStop".equals(operation)){
+                officialGeneration.incrementAndGet();runOnUiThread(()->{if(officialUpdates!=null){officialUpdates.destroy();officialUpdates=null;}reply(id,new JSONObject(),null);});return;
+            }
+            final int officialTicket=officialGeneration.get();
             if("accountLogin".equals(operation)){runOnUiThread(()->showLogin(id));return;}
-            ExecutorService executor = operation.startsWith("account")?accounts:operation.startsWith("update")?files:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage", "openRegistration").contains(operation) ? files : network;
+            ExecutorService executor = (operation.startsWith("account")||operation.equals("officialUpdates"))?accounts:operation.startsWith("update")?files:Arrays.asList("bootstrap", "saveState", "localChapter", "localOrder", "removeLocal", "storage", "bookmarkSave", "bookmarkRemove", "copyText", "readerSystemUi", "aboutInfo", "aboutNotices", "openProjectPage", "openRegistration").contains(operation) ? files : network;
             executor.execute(() -> {
                 try {
                     JSONObject input = new JSONObject(json);
-                    if(operation.startsWith("account")&&input.has("expectedUid")&&account!=null){JSONObject profile=account.status().optJSONObject("profile");String uid=profile==null?"":profile.optString("uid");if(!input.optString("expectedUid").equals(uid))throw new IOException("账号已切换，请重新操作");}
+                    if((operation.startsWith("account")||operation.equals("officialUpdates"))&&input.has("expectedUid")&&account!=null){JSONObject profile=account.status().optJSONObject("profile");String uid=profile==null?"":profile.optString("uid");if(!input.optString("expectedUid").equals(uid))throw new IOException("账号已切换，请重新操作");}
                     Object result;
                     switch (operation) {
                         case "bootstrap": result = new JSONObject().put("state", new JSONObject(prefs.getString("state", "{}")))
-                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.8.2"); break;
+                            .put("bookmarks",bookmarks.all()).put("localBooks", local.all()).put("localOrders",local.orders()).put("offlineCache",offline==null?new JSONObject():offline.status()).put("account",account==null?new JSONObject().put("signedIn",false):account.status()).put("version", "0.8.3"); break;
                         case "openRegistration": {CountDownLatch opened=new CountDownLatch(1);Exception[] failure=new Exception[1];runOnUiThread(()->{try{Registration.open(MainActivity.this);}catch(ActivityNotFoundException e){failure[0]=new IOException("请安装浏览器后打开官网注册页");}finally{opened.countDown();}});if(!opened.await(3,TimeUnit.SECONDS))throw new IOException("暂未打开浏览器，请重试");if(failure[0]!=null)throw failure[0];result=new JSONObject().put("opened",true);break;}
                         case "updateAutoCheck": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.autoCheck();break;
                         case "updateDefer": if(updater==null)throw new IOException("更新服务暂不可用");result=updater.defer();break;
@@ -133,7 +139,7 @@ public final class MainActivity extends Activity {
                         case "accountStatus": if(account==null)throw new IOException("本机安全存储暂不可用"); result=account.status();break;
                         case "accountPull": if(account==null)throw new IOException("本机安全存储暂不可用");result=account.pull();break;
                         case "accountAdd": case "accountRemove": if(account==null)throw new IOException("本机安全存储暂不可用");result=account.change(onlineId(input),operation.equals("accountAdd"));break;
-                        case "accountLogout": if(account==null)throw new IOException("本机安全存储暂不可用");result=account.logout();break;
+                        case "accountLogout": if(account==null)throw new IOException("本机安全存储暂不可用");result=account.logout();officialCookieOwner="";if(officialUpdates!=null)officialUpdates.clear();else runOnUiThread(()->WenkuWebUpdates.clearAuth(()->{}));break;
                         case "cacheStatus": if(offline==null)throw new IOException("缓存目录暂不可用");result=offline.status();break;
                         case "cacheStart": if(offline==null)throw new IOException("缓存目录暂不可用");int cacheId=onlineId(input);result=offline.start(cacheId,input.getJSONObject("book"),catalog(cacheId,false),input.optString("volume"),input.optBoolean("images",true),Math.max(0,input.optInt("chapterId")));break;
                         case "cacheCancel": if(offline==null)throw new IOException("缓存目录暂不可用");result=offline.cancel();break;
@@ -141,6 +147,13 @@ public final class MainActivity extends Activity {
                         case "cacheLimit": if(offline==null)throw new IOException("缓存目录暂不可用");result=offline.limit(input.getInt("limitMiB"));break;
                         case "tagQuery": result=tags.query(input.optJSONArray("tags"),input.optString("mode","all"),input.optString("query"),input.optInt("limit",30),input.optBoolean("start"),input.optBoolean("refresh"));break;
                         case "tagPause": result=tags.pause();break;
+                        case "officialUpdates": {
+                            if(account==null)throw new IOException("请先登录 Wenku8 账号");if(officialTicket!=officialGeneration.get())throw new IOException("已切换榜单，官网读取已关闭。");
+                            WenkuAccount.WebAccess access=account.webAccess();CountDownLatch ready=new CountDownLatch(1);Exception[] failure={null};WenkuWebUpdates[] selected={null};
+                            runOnUiThread(()->{try{if(!alive||officialTicket!=officialGeneration.get())throw new IOException("已切换榜单，官网读取已关闭。");if(officialUpdates==null)officialUpdates=new WenkuWebUpdates(MainActivity.this,root,officialCookieOwner);selected[0]=officialUpdates;}catch(Exception error){failure[0]=error;}finally{ready.countDown();}});
+                            if(!ready.await(5,TimeUnit.SECONDS))throw new IOException("官网页面尚未准备好");if(failure[0]!=null)throw failure[0];
+                            result=selected[0].page(input.optInt("page",1),access,input.optBoolean("show"));if(alive&&officialTicket==officialGeneration.get())officialCookieOwner=access.uid;break;
+                        }
                         case "feed": case "search": case "author": {
                             int page = Math.max(1, Math.min(1000, input.optInt("page", 1)));
                             String sort = input.optString("sort", "lastupdate");
@@ -418,7 +431,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume(){super.onResume();resumeUpdateInstall();if(view!=null)view.evaluateJavascript("window.App && window.App.setForeground(true)",null);}
     @Override public void onLowMemory(){super.onLowMemory();api.clearMemory();}
     @Override protected void onDestroy() {
-        alive = false;if(readerSystemUi!=null)readerSystemUi.destroy();
+        alive = false;officialGeneration.incrementAndGet();if(officialUpdates!=null)officialUpdates.destroy();if(readerSystemUi!=null)readerSystemUi.destroy();
         network.shutdownNow(); files.shutdown();accounts.shutdownNow();api.clearMemory();
         if (view != null) { view.removeJavascriptInterface("ReaderNative"); view.destroy(); }
         

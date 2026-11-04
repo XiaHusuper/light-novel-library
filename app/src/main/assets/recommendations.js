@@ -32,10 +32,11 @@
     const observed=new Set(history.concat(shelf).map(b=>String(b.id)));signals.filter(b=>!b.hidden&&b.score>0).forEach(b=>observed.add(String(b.id)));
     Object.keys(feedback).filter(id=>feedback[id]==='like').forEach(id=>observed.add(id));
     const known=new Set(preference.likes||[]);unique.forEach(book=>{if(observed.has(String(book.id)))L.tags(book).forEach(t=>known.add(t));});
+    const allowed=options.candidateIds?new Set(options.candidateIds.map(String)):null;
     const shown=(options.shown||[]).map(String),skipped=new Set(shown),identity=options.identity||'guest',day=new Date((options.now||Date.now())+8*3600000).toISOString().slice(0,10),batch=options.batch||0;
     const random=(id,salt='')=>seed(identity+':'+day+':'+batch+':'+id+':'+salt);
     const unit=f=>{const length=Math.sqrt(Object.values(f).reduce((sum,n)=>sum+n*n,0));return Object.fromEntries(Object.entries(f).map(([t,n])=>[t,length?n/length:0]));};
-    const candidates=Array.from(unique.values()).filter(b=>b.source!=='local'&&!L.inShelf(b,(excluded||[]).concat(shelf))&&feedback[String(b.id)]!=='hide'&&!L.tags(b).some(t=>avoid.has(t))).map(book=>{
+    const candidates=Array.from(unique.values()).filter(b=>b.source!=='local'&&(!allowed||allowed.has(String(b.id)))&&!L.inShelf(b,(excluded||[]).concat(shelf))&&feedback[String(b.id)]!=='hide'&&!L.tags(b).some(t=>avoid.has(t))).map(book=>{
       const id=String(book.id),f=L.features(L.tags(book)),content=L.features(L.tags(book).filter(t=>['daily','fantasy','dark'].includes(root.ReaderTaxonomy.groups.find(g=>g.tags.includes(t))?.id))),balance=unit(Object.keys(content).length?content:Object.keys(f).length?f:{untagged:1}),match=L.cosine(profile,f),novelty=Object.keys(f).reduce((sum,t)=>sum+(known.has(t)?0:f[t]),0),familiarity=Object.keys(f).reduce((sum,t)=>sum+(known.has(t)?f[t]:0),0);
       return{book,id,f,balance,match,novelty,familiarity,rank:confidence*match+(1-confidence)*random(id),fresh:!skipped.has(id)};
     });

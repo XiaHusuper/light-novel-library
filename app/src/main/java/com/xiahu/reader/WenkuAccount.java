@@ -56,7 +56,11 @@ final class WenkuAccount {
         String encoded=Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(session.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)),Base64.NO_WRAP);
         if(!prefs.edit().putString("encrypted",encoded).commit())throw new IOException("无法安全保存登录状态，请重试");
     }
-    synchronized JSONObject status()throws Exception{return new JSONObject().put("signedIn",!session.optString("cookie").isEmpty()&&!expired&&!(isWebsite()&&website==null)).put("requiresApiLogin",isWebsite()&&website==null).put("website",isWebsite()).put("expired",expired).put("verificationRequired",verificationRequired).put("profile",displayProfile(session.optJSONObject("profile"))).put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books")).put("syncedAt",session.optLong("syncedAt")).put("pendingShelfCount",session.optJSONObject("pendingShelf")==null?0:session.optJSONObject("pendingShelf").length()).put("warning",session.optString("shelfWarning"));}
+    synchronized JSONObject status()throws Exception{return new JSONObject().put("signedIn",!session.optString("cookie").isEmpty()&&!expired&&!(isWebsite()&&website==null)).put("requiresApiLogin",isWebsite()&&website==null).put("website",isWebsite()).put("expired",expired).put("verificationRequired",verificationRequired).put("profile",displayProfile(session.optJSONObject("profile"))).put("books",session.optJSONArray("books")==null?new JSONArray():session.getJSONArray("books")).put("syncedAt",session.optLong("syncedAt")).put("pendingShelfCount",pendingShelfCount()).put("warning",session.optString("shelfWarning"));}
+    private int pendingShelfCount(){
+        JSONObject receipts=session.optJSONObject("pendingShelf");if(receipts==null)return 0;
+        int count=0;Iterator<String> keys=receipts.keys();while(keys.hasNext()){JSONObject receipt=receipts.optJSONObject(keys.next());if(receipt!=null&&!receipt.optBoolean("confirmed"))count++;}return count;
+    }
     private boolean isWebsite(){return session.optString("mode").equals("website");}
     synchronized JSONObject adoptWebsite()throws Exception{
         if(website==null)throw new IOException("官网会话暂不可用");
@@ -146,8 +150,10 @@ final class WenkuAccount {
         int unconfirmed=0;long now=System.currentTimeMillis();
         for(String id:keys){
             JSONObject intent=pending.getJSONObject(id);boolean add=intent.getBoolean("add"),present=books.containsKey(id);
-            if(confirm&&present==add){pending.remove(id);continue;}
-            if(confirm&&now-intent.optLong("at")>30*60*1000){pending.remove(id);unconfirmed++;continue;}
+            // Keep recent accepted writes even after a matching read: a later
+            // response can still be older. A bounded guard permits website edits later.
+            if(confirm&&now-intent.optLong("at")>30*60*1000){pending.remove(id);if(present!=add)unconfirmed++;continue;}
+            if(confirm)intent.put("confirmed",present==add);
             if(add&&!present){JSONObject known=find(Integer.parseInt(id));if(known==null)known=parseShelf("<metadata><book aid=\""+id+"\"/></metadata>").getJSONObject(0);books.put(id,known);}
             if(!add)books.remove(id);
         }
@@ -166,12 +172,16 @@ final class WenkuAccount {
         session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies)).put("profile",profile);save();
     }
     private JSONArray readShelfIds()throws Exception{
-        ApiClient.Exchange response=exchange("action=bookcase&do=list&t=0",session.getString("cookie"));
-        if(response.body.trim().equals("4")){
-            expired=true;if(recoverSession())return session.getJSONArray("books");
-            throw new IOException("登录已失效，请重新登录");
+        for(int attempt=0;attempt<2;attempt++){
+            ApiClient.Exchange response=exchange("action=bookcase&do=list&t=0",session.getString("cookie"));
+            if(response.body.trim().equals("4")){
+                expired=true;
+                if(attempt==0&&recoverSession())continue;
+                throw new IOException("登录已失效，请重新登录");
+            }
+            JSONArray books=parseShelf(response.body);session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));return books;
         }
-        JSONArray books=parseShelf(response.body);session.put("cookie",mergeCookies(session.getString("cookie"),response.cookies));return books;
+        throw new IOException("账号书架读取未完成，原书架已保留");
     }
     private static JSONArray withShelfNames(JSONArray ids,JSONArray... sources)throws Exception{
         Map<String,JSONObject> known=new HashMap<>();
@@ -207,6 +217,16 @@ final class WenkuAccount {
         if(!confirmed)throw new IOException(uncertain==null?"网站未确认本次修改，请打开官方网页核对书架容量或账号权限":uncertain.getMessage());return status();
     }
     private void markWebsiteError(Exception e){if(e instanceof WebsiteException){String code=((WebsiteException)e).code;if(code.equals("verification"))verificationRequired=true;if(code.equals("login"))expired=true;}}
+    /** Native-only handoff for the official site; never included in status/bridge JSON. */
+    static final class WebAccess {
+        final String uid,cookie,username,password;
+        WebAccess(String uid,String cookie,String username,String password){this.uid=uid;this.cookie=cookie;this.username=username;this.password=password;}
+    }
+    synchronized WebAccess webAccess()throws Exception{
+        requireSession();JSONObject profile=session.optJSONObject("profile"),credentials=session.optJSONObject("credentials");
+        String uid=profile==null?"":profile.optString("uid");if(!uid.matches("[1-9][0-9]*"))throw new IOException("请先登录 Wenku8 账号");
+        return new WebAccess(uid,session.optString("cookie"),credentials==null?"":credentials.optString("username"),credentials==null?"":credentials.optString("password"));
+    }
     synchronized JSONObject logout()throws Exception{if(!prefs.edit().clear().commit())throw new IOException("无法清除本机登录状态，请重试");session=new JSONObject();expired=false;verificationRequired=false;if(website!=null)website.clear();return status();}
     private static JSONObject displayProfile(JSONObject original)throws Exception{if(original==null)return null;JSONObject profile=new JSONObject(original.toString());for(String key:new String[]{"uname","nickname"}){String value=profile.optString(key).replaceAll("[（(]?\\s*留空则[\\s\\S]*$","").replaceAll("[（(]修改[\\s\\S]*$","").trim();profile.put(key,value);}return profile;}
     private boolean recoverSession()throws Exception{

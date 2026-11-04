@@ -11,7 +11,7 @@ import java.security.KeyStore;
 public final class ShelfChangeTest extends Instrumentation {
  static final String STORE="reader_shelf_change_fixture",ALIAS="ReaderShelfChangeFixture";
  static void check(boolean ok,String name){if(!ok)throw new AssertionError(name);}
- static final class Fake implements WenkuAccount.Transport {
+ static class Fake implements WenkuAccount.Transport {
   final Set<Integer> books=new LinkedHashSet<>(Arrays.asList(129));Set<Integer> beforeWrite=new LinkedHashSet<>(books);
   int logins,writes,reads,uid=123;String token="",mutationCode="1";
   boolean expired,expireWrite,deny,ambiguous,noApply,offlineRead,stale;
